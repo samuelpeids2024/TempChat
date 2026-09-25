@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>瞬間聊天室</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --msg-own: #6366f1;
+            --msg-other: #f1f5f9;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --radius: 16px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 動畫定義 */
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* 主容器 */
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 頁面切換 */
+        .page {
+            position: absolute;
+            inset: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+            background: var(--surface);
+        }
+
+        .page.hidden {
+            transform: translateX(100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .page.active {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        /* 標題區 */
+        .hero {
+            text-align: center;
+            margin-bottom: 40px;
+            animation: slideUp 0.6s ease;
+        }
+
+        .hero h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--primary), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .hero p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* 輸入框 */
+        .input-group {
+            margin-bottom: 16px;
+            animation: slideUp 0.6s ease 0.1s both;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+            background: var(--bg);
+            outline: none;
+        }
+
+        .input-field:focus {
+            border-color: var(--primary);
+            background: var(--surface);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        /* 按鈕 */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: var(--bg);
+            color: var(--text);
+            border: 2px solid var(--border);
+            margin-top: 12px;
+        }
+
+        .btn-secondary:active {
+            background: var(--border);
+        }
+
+        /* 聊天室頭部 */
+        .chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--surface);
+            z-index: 10;
+        }
+
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: none;
+            background: var(--bg);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: background 0.2s;
+        }
+
+        .back-btn:active {
+            background: var(--border);
+        }
+
+        .room-info {
+            flex: 1;
+        }
+
+        .room-info h3 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .room-info span {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .share-btn {
+            padding: 8px 14px;
+            background: var(--bg);
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .share-btn:active {
+            background: var(--border);
+        }
+
+        /* 聊天訊息區 */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 15px;
+            line-height: 1.4;
+            word-break: break-word;
+            animation: scaleIn 0.3s ease;
+        }
+
+        .message.own {
+            align-self: flex-end;
+            background: var(--msg-own);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.other {
+            align-self: flex-start;
+            background: var(--msg-other);
+            color: var(--text);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message .author {
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            opacity: 0.7;
+        }
+
+        .message.own .author {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .message.other .author {
+            color: var(--primary);
+        }
+
+        .message .time {
+            font-size: 10px;
+            opacity: 0.6;
+            margin-top: 4px;
+            text-align: right;
+        }
+
+        /* 輸入區 */
+        .chat-input-area {
+            padding: 16px 20px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            background: var(--surface);
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid var(--border);
+            border-radius: 24px;
+            font-size: 15px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            border-color: var(--primary);
+        }
+
+        .send-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s, background 0.2s;
+            flex-shrink: 0;
+        }
+
+        .send-btn:active {
+            transform: scale(0.92);
+            background: var(--primary-dark);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 系統訊息 */
+        .system-msg {
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 8px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        /* Toast 提示 */
+        .toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            white-space: nowrap;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* 載入動畫 */
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 桌面端適配 */
+        @media (min-width: 768px) {
+            .app-container {
+                height: 90vh;
+                margin-top: 5vh;
+                border-radius: 24px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 首頁：創建/加入房間 -->
+        <div id="homePage" class="page active">
+            <div class="hero">
+                <h1>💬 瞬間聊天室</h1>
+                <p>建立臨時房間，分享連結即可開始對話</p>
+            </div>
+            
+            <div class="input-group">
+                <label>你的暱稱</label>
+                <input type="text" id="nicknameInput" class="input-field" placeholder="輸入你想顯示的暱稱" maxlength="20">
+            </div>
+
+            <div class="input-group">
+                <label>房間代碼</label>
+                <input type="text" id="roomInput" class="input-field" placeholder="輸入房間代碼或點擊下方建立">
+            </div>
+
+            <button class="btn btn-primary" id="joinBtn" onclick="joinRoom()">
+                <span>加入房間</span>
+            </button>
+
+            <button class="btn btn-secondary" onclick="createRoom()">
+                建立新房間
+            </button>
+        </div>
+
+        <!-- 聊天頁面 -->
+        <div id="chatPage" class="page hidden">
+            <div class="chat-header">
+                <button class="back-btn" onclick="leaveRoom()">←</button>
+                <div class="room-info">
+                    <h3 id="roomTitle">房間</h3>
+                    <span id="roomIdDisplay"></span>
+                </div>
+                <button class="share-btn" onclick="shareRoom()">分享</button>
+            </div>
+
+            <div class="chat-messages" id="messagesContainer">
+                <!-- 訊息將在這裡動態插入 -->
+            </div>
+
+            <div class="chat-input-area">
+                <input type="text" id="messageInput" class="chat-input" placeholder="輸入訊息..." maxlength="500">
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ==================== Firebase 配置 ====================
+        // ⚠️ 請替換為你自己的 Firebase 配置
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // 初始化 Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // ==================== 全域變數 ====================
+        let currentRoomId = null;
+        let currentNickname = '';
+        let messagesRef = null;
+        let messagesListener = null;
+
+        // DOM 元素
+        const homePage = document.getElementById('homePage');
+        const chatPage = document.getElementById('chatPage');
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const nicknameInput = document.getElementById('nicknameInput');
+        const roomInput = document.getElementById('roomInput');
+        const toast = document.getElementById('toast');
+
+        // ==================== 頁面切換 ====================
+        function showPage(page) {
+            if (page === 'home') {
+                homePage.classList.remove('hidden');
+                homePage.classList.add('active');
+                chatPage.classList.remove('active');
+                chatPage.classList.add('hidden');
+            } else {
+                chatPage.classList.remove('hidden');
+                chatPage.classList.add('active');
+                homePage.classList.remove('active');
+                homePage.classList.add('hidden');
+            }
+        }
+
+        // ==================== Toast 提示 ====================
+        function showToast(text) {
+            toast.textContent = text;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // ==================== 工具函數 ====================
+        function generateRoomId() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // ==================== 房間操作 ====================
+        function createRoom() {
+            const nickname = nicknameInput.value.trim();
+            if (!nickname) {
+                showToast('請先輸入暱稱');
+                nicknameInput.focus();
+                return;
+            }
+
+            const roomId = generateRoomId();
+            currentRoomId = roomId;
+            currentNickname = nickname;
+
+            // 在資料庫建立房間
+            db.ref(`rooms/${roomId}`).set({
+                createdAt: Date.now(),
+                messages: {}
+            }).then(() => {
+                enterRoom(roomId);
+            });
+        }
+
+        function joinRoom() {
+            const nickname = nicknameInput.value.trim();
+            const roomId = roomInput.value.trim().toUpperCase();
+
+            if (!nickname) {
+                showToast('請先輸入暱稱');
+                nicknameInput.focus();
+                return;
+            }
+            if (!roomId) {
+                showToast('請輸入房間代碼');
+                roomInput.focus();
+                return;
+            }
+
+            currentRoomId = roomId;
+            currentNickname = nickname;
+
+            // 檢查房間是否存在
+            db.ref(`rooms/${roomId}`).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    enterRoom(roomId);
+                } else {
+                    showToast('房間不存在');
+                }
+            });
+        }
+
+        function enterRoom(roomId) {
+            document.getElementById('roomTitle').textContent = '💬 聊天室';
+            document.getElementById('roomIdDisplay').textContent = `房間代碼: ${roomId}`;
+            
+            showPage('chat');
+            messagesContainer.innerHTML = '';
+            
+            // 發送系統訊息
+            addSystemMessage(`${currentNickname} 加入了聊天室`);
+            
+            // 監聽訊息
+            messagesRef = db.ref(`rooms/${roomId}/messages`);
+            messagesListener = messagesRef.on('child_added', (snapshot) => {
+                const msg = snapshot.val();
+                displayMessage(msg);
+            });
+
+            messageInput.focus();
+        }
+
+        function leaveRoom() {
+            if (messagesRef && messagesListener) {
+                messagesRef.off('child_added', messagesListener);
+            }
+            currentRoomId = null;
+            messagesContainer.innerHTML = '';
+            showPage('home');
+        }
+
+        // ==================== 訊息操作 ====================
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !currentRoomId) return;
+
+            const message = {
+                text: text,
+                author: currentNickname,
+                timestamp: Date.now()
+            };
+
+            messagesRef.push(message);
+            messageInput.value = '';
+        }
+
+        function displayMessage(msg) {
+            const isOwn = msg.author === currentNickname;
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+
+            const authorDiv = document.createElement('div');
+            authorDiv.className = 'author';
+            authorDiv.textContent = isOwn ? '你' : msg.author;
+
+            const textDiv = document.createElement('div');
+            textDiv.className = 'text';
+            textDiv.textContent = msg.text;
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'time';
+            timeDiv.textContent = formatTime(msg.timestamp);
+
+            msgDiv.appendChild(authorDiv);
+            msgDiv.appendChild(textDiv);
+            msgDiv.appendChild(timeDiv);
+
+            messagesContainer.appendChild(msgDiv);
+            scrollToBottom();
+        }
+
+        function addSystemMessage(text) {
+            const sysDiv = document.createElement('div');
+            sysDiv.className = 'system-msg';
+            sysDiv.textContent = text;
+            messagesContainer.appendChild(sysDiv);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            requestAnimationFrame(() => {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            });
+        }
+
+        // ==================== 分享功能 ====================
+        function shareRoom() {
+            const url = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: '加入我的聊天室',
+                    text: `房間代碼: ${currentRoomId}`,
+                    url: url
+                }).catch(() => {});
+            } else {
+                // 複製到剪貼板
+                navigator.clipboard.writeText(url).then(() => {
+                    showToast('連結已複製到剪貼板');
+                }).catch(() => {
+                    showToast('分享失敗');
+                });
+            }
+        }
+
+        // ==================== 事件監聽 ====================
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        roomInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                joinRoom();
+            }
+        });
+
+        nicknameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                roomInput.focus();
+            }
+        });
+
+        // 檢查 URL 參數自動加入房間
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const roomFromUrl = params.get('room');
+            if (roomFromUrl) {
+                roomInput.value = roomFromUrl;
+                nicknameInput.focus();
+            }
+        });
+    </script>
+</body>
+</html>
