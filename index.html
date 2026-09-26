@@ -570,12 +570,15 @@
             currentRoomId = roomId;
             currentNickname = nickname;
 
-            // 在資料庫建立房間
-            db.ref(`rooms/${roomId}`).set({
-                createdAt: Date.now(),
-                messages: {}
+            // 建立房間文件
+            db.collection('rooms').doc(roomId).set({
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                roomId: roomId
             }).then(() => {
                 enterRoom(roomId);
+            }).catch(err => {
+                console.error('建立房間失敗:', err);
+                showToast('建立房間失敗');
             });
         }
 
@@ -598,38 +601,49 @@
             currentNickname = nickname;
 
             // 檢查房間是否存在
-            db.ref(`rooms/${roomId}`).once('value', (snapshot) => {
-                if (snapshot.exists()) {
+            db.collection('rooms').doc(roomId).get().then(doc => {
+                if (doc.exists) {
                     enterRoom(roomId);
                 } else {
                     showToast('房間不存在');
                 }
+            }).catch(err => {
+                console.error('查詢房間失敗:', err);
+                showToast('無法加入房間');
             });
         }
 
         function enterRoom(roomId) {
-            document.getElementById('roomTitle').textContent = '💬 聊天室';
             document.getElementById('roomIdDisplay').textContent = `房間代碼: ${roomId}`;
-            
             showPage('chat');
             messagesContainer.innerHTML = '';
-            
-            // 發送系統訊息
+
             addSystemMessage(`${currentNickname} 加入了聊天室`);
+
+            // 監聽訊息（使用 Firestore）
+            messagesCollection = db.collection('rooms').doc(roomId).collection('messages');
             
-            // 監聽訊息
-            messagesRef = db.ref(`rooms/${roomId}/messages`);
-            messagesListener = messagesRef.on('child_added', (snapshot) => {
-                const msg = snapshot.val();
-                displayMessage(msg);
-            });
+            unsubscribeMessages = messagesCollection
+                .orderBy('timestamp', 'asc')
+                .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === 'added') {
+                            displayMessage(change.doc.data());
+                        }
+                    });
+                }, err => {
+                    console.error('監聽訊息失敗:', err);
+                    showToast('連線發生錯誤');
+                });
 
             messageInput.focus();
         }
 
+
         function leaveRoom() {
-            if (messagesRef && messagesListener) {
-                messagesRef.off('child_added', messagesListener);
+            if (unsubscribeMessages) {
+                unsubscribeMessages();
+                unsubscribeMessages = null;
             }
             currentRoomId = null;
             messagesContainer.innerHTML = '';
@@ -644,11 +658,15 @@
             const message = {
                 text: text,
                 author: currentNickname,
-                timestamp: Date.now()
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
             };
 
-            messagesRef.push(message);
-            messageInput.value = '';
+            messagesCollection.add(message).then(() => {
+                messageInput.value = '';
+            }).catch(err => {
+                console.error('發送訊息失敗:', err);
+                showToast('發送失敗');
+            });
         }
 
         function displayMessage(msg) {
@@ -666,7 +684,7 @@
 
             const timeDiv = document.createElement('div');
             timeDiv.className = 'time';
-            timeDiv.textContent = formatTime(msg.timestamp);
+            timeDiv.textContent = msg.timestamp ? formatTime(msg.timestamp.toDate()) : '';
 
             msgDiv.appendChild(authorDiv);
             msgDiv.appendChild(textDiv);
@@ -693,7 +711,7 @@
         // ==================== 分享功能 ====================
         function shareRoom() {
             const url = `${window.location.origin}${window.location.pathname}?room=${currentRoomId}`;
-            
+
             if (navigator.share) {
                 navigator.share({
                     title: '加入我的聊天室',
@@ -701,7 +719,6 @@
                     url: url
                 }).catch(() => {});
             } else {
-                // 複製到剪貼板
                 navigator.clipboard.writeText(url).then(() => {
                     showToast('連結已複製到剪貼板');
                 }).catch(() => {
