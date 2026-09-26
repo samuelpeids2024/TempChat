@@ -457,8 +457,7 @@
 
     <script>
         // ==================== Firebase 配置 ====================
-        // ⚠️ 請替換為你自己的 Firebase 配置
-        const firebaseConfig = {
+        let firebaseConfig = {
             apiKey: "AIzaSyA3QtuTY4FWeTQzHRgg-xB8qRf1x7I5yLU",
             authDomain: "tempchat-1cacd.firebaseapp.com",
             projectId: "tempchat-1cacd",
@@ -467,9 +466,49 @@
             appId: "1:720744820122:web:a7540a7d37acc0442e9e23"
           };
 
-        // 初始化 Firebase
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        const savedConfig = localStorage.getItem('firebaseConfig');
+        if (savedConfig) {
+            try {
+                firebaseConfig = JSON.parse(savedConfig);
+            } catch (e) {
+                console.log('使用默認配置');
+            }
+        }
+
+        // ==================== Firebase 初始化 ====================
+        let db;
+        let auth;
+        let messagesCollection;
+        let unsubscribeMessages = null;
+
+        function initializeFirebase() {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                auth = firebase.auth();
+
+                auth.signInAnonymously().then(() => {
+                    console.log('匿名登入成功');
+                    updateConnectionStatus(true);
+                    document.getElementById('joinBtn').disabled = false;
+                }).catch(error => {
+                    console.error('匿名登入失敗:', error);
+                    updateConnectionStatus(false, '登入失敗');
+                });
+
+            } catch (error) {
+                console.error('Firebase初始化失敗:', error);
+                updateConnectionStatus(false, '配置錯誤');
+            }
+        }
+
+        function updateConnectionStatus(connected, message) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            dot.classList.toggle('connected', connected);
+            dot.classList.toggle('error', !connected && message);
+            text.textContent = message || (connected ? '已連線' : '連線中...');
+        }
 
         // ==================== 全域變數 ====================
         let currentRoomId = null;
@@ -698,6 +737,7 @@
                 roomInput.value = roomFromUrl;
                 nicknameInput.focus();
             }
+            initializeFirebase();
         });
     </script>
 </body>
